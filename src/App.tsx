@@ -1,234 +1,224 @@
-import React, { useState, useEffect } from 'react';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
-import CreatePage from './components/CreatePage';
-import ProductDashboardView from './components/ProductDashboardView';
-import ProductLibraryView from './components/ProductLibraryView';
-import DashboardOverview from './components/DashboardOverview';
-import AnalyticsView from './components/AnalyticsView';
-import SettingsView from './components/SettingsView';
-import { DigitalProduct, AICreditCost } from './types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { FormProvider, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { StudioHome } from './studio/StudioHome';
+import { StudioNav } from './studio/StudioNav';
+import { ChecklistBuilderApp } from './modules/checklist-builder/ChecklistBuilderApp';
+import { PlannerEngine } from './modules/planner-engine/PlannerEngine';
+import { CalculatorEngine } from './modules/calculator-engine/CalculatorEngine';
+import { AIBuilder } from './modules/ai-builder/AIBuilder';
+import { ProductHeader } from './components/ProductHeader';
+import { Sidebar } from './components/Sidebar';
+import { WorkflowAccordion } from './engine/components/WorkflowAccordion';
+import { Footer } from './components/Footer';
+import { PrintableSummary } from './engine/components/PrintableSummary';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { Toast } from './components/Toast';
+import { useProgress } from './engine/useProgress';
+import { buildZodSchema, requiredFieldPaths } from './engine/schemaBuilder';
+import { buildDefaultValues } from './engine/defaultValues';
+import { applyBrandTheme } from './engine/theme';
+import { loadFormData, saveFormData, clearFormData, loadOpenSection, saveOpenSection } from './lib/storage';
+import { downloadElementAsPdf } from './lib/pdf';
+import { api_getTemplate } from './modules/checklist-builder/api';
+import type { ChecklistConfig, ChecklistData } from './engine/types';
 
-// Mock seeder is now empty to start from scratch without mock data
-const SEEDED_PRODUCTS: DigitalProduct[] = [];
+type ActiveTool = null | 'checklist' | 'planner' | 'calculator' | 'ai-builder';
 
-export default function App() {
-  const [currentTab, setCurrentTab] = useState<string>('create');
-  const [activeProduct, setActiveProduct] = useState<DigitalProduct | null>(null);
-  
-  // Platform credits
-  const [credits, setCredits] = useState<number>(12450);
+const TOOL_NAMES: Record<string, string> = {
+  checklist: 'Checklist Builder',
+  planner: 'Planner Engine',
+  calculator: 'Calculator Engine',
+  'ai-builder': 'AI Product Builder',
+};
 
-  // Credit cost configurations
-  const [creditCosts, setCreditCosts] = useState<AICreditCost[]>([
-    { action: "Initial Product Generation", cost: 150 },
-    { action: "SEO Strategy Audit", cost: 30 },
-    { action: "Full Language Translation", cost: 50 },
-    { action: "Aesthetic Layout Adjustments", cost: 40 }
-  ]);
+// -----------------------------------------------------------------------
+// Public Fill — renders a checklist from ?template=ID
+// -----------------------------------------------------------------------
+function PublicFill({ templateId }: { templateId: string }) {
+  const [config, setConfig] = useState<ChecklistConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load and save from localStorage
-  const [products, setProducts] = useState<DigitalProduct[]>(() => {
-    const saved = localStorage.getItem('bgrowth_studio_products_v3');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Ensure we filter out any legacy seeded objects if they exist
-        return Array.isArray(parsed) ? parsed.filter((p: any) => !p.id.startsWith('seed_')) : SEEDED_PRODUCTS;
-      } catch {
-        return SEEDED_PRODUCTS;
-      }
+  useEffect(() => {
+    api_getTemplate(templateId)
+      .then((t) => {
+        const parsed = JSON.parse(t.configJson) as ChecklistConfig;
+        setConfig(parsed);
+        applyBrandTheme(parsed.brand.primaryColor);
+        document.title = `${parsed.brand.name} | BGrowth Club`;
+      })
+      .catch(() => setError('Checklist not found or unavailable.'))
+      .finally(() => setLoading(false));
+  }, [templateId]);
+
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center bg-[#f4f6fb]">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+    </div>
+  );
+
+  if (error || !config) return (
+    <div className="flex h-screen flex-col items-center justify-center gap-3 bg-[#f4f6fb] text-center">
+      <p className="text-lg font-bold text-navy-800">Checklist not found</p>
+      <p className="text-sm text-navy-400">{error}</p>
+    </div>
+  );
+
+  return <PublicFillInner config={config} storageId={`public-${templateId}`} />;
+}
+
+function PublicFillInner({ config, storageId }: { config: ChecklistConfig; storageId: string }) {
+  const methods = useForm<ChecklistData>({
+    resolver: zodResolver(buildZodSchema(config)) as never,
+    mode: 'onBlur',
+    defaultValues: loadFormData(storageId) ?? buildDefaultValues(config),
+  });
+  const { watch, trigger, reset } = methods;
+  const values = watch();
+  const progress = useProgress(config, values);
+  const [activeId, setActiveId] = useState(() => loadOpenSection(storageId) ?? config.sections[0].id);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const printableRef = useRef<HTMLDivElement>(null);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    setToast({ message, visible: true });
+    window.setTimeout(() => setToast((t) => ({ ...t, visible: false })), 2200);
+  }, []);
+
+  useEffect(() => {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => saveFormData(storageId, values), 500);
+    return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(values)]);
+
+  useEffect(() => { saveOpenSection(storageId, activeId); }, [storageId, activeId]);
+
+  const handleContinue = async (id: string) => {
+    const section = config.sections.find((s) => s.id === id);
+    const fieldPaths = section ? requiredFieldPaths(section) : [];
+    if (fieldPaths.length > 0) {
+      const valid = await trigger(fieldPaths as Parameters<typeof trigger>[0]);
+      if (!valid) return;
     }
-    return SEEDED_PRODUCTS;
+    saveFormData(storageId, methods.getValues());
+    const next = config.sections[config.sections.findIndex((s) => s.id === id) + 1];
+    if (next) setActiveId(next.id);
+    else showToast('Checklist complete — nice work!');
+  };
+
+  const stepListItems = config.sections.map((section) => {
+    const p = progress.sections[section.id];
+    const status = section.id === activeId ? ('active' as const) : p.isComplete ? ('completed' as const) : ('pending' as const);
+    return { id: section.id, number: section.number, title: section.title, subtitle: p.isOptional ? 'Optional' : `${p.filled} / ${p.total} completed`, status };
+  });
+
+  return (
+    <FormProvider {...methods}>
+      <div className="min-h-screen bg-[#f4f6fb]">
+        <ProductHeader
+          title={config.brand.name}
+          onSave={() => { setIsSaving(true); saveFormData(storageId, methods.getValues()); setTimeout(() => { setIsSaving(false); showToast('Saved'); }, 350); }}
+          onPrint={() => window.print()}
+          onDownloadPdf={async () => {
+            if (!printableRef.current) return;
+            setIsGeneratingPdf(true);
+            try { await downloadElementAsPdf(printableRef.current, `${config.brand.name}.pdf`); showToast('PDF downloaded'); }
+            finally { setIsGeneratingPdf(false); }
+          }}
+          onReset={() => setResetDialogOpen(true)}
+          isSaving={isSaving}
+          isGeneratingPdf={isGeneratingPdf}
+        />
+        <main className="no-print mx-auto flex max-w-[1280px] flex-col gap-5 px-4 py-6 sm:px-6 lg:flex-row lg:items-start">
+          <Sidebar percent={progress.percent} completed={progress.completedFields} total={progress.totalFields} items={stepListItems} activeId={activeId} onSelect={setActiveId} />
+          <section className="min-w-0 flex-1">
+            <WorkflowAccordion config={config} activeId={activeId} onSelect={setActiveId} onContinue={handleContinue} progressBySection={progress.sections} />
+          </section>
+        </main>
+        <Footer footer={config.footer} />
+        <PrintableSummary ref={printableRef} config={config} data={values} percent={progress.percent} />
+        <ConfirmDialog open={resetDialogOpen} title="Reset the entire checklist?" description="This clears every field stored in this browser." confirmLabel="Reset Form" onConfirm={() => { clearFormData(storageId); reset(buildDefaultValues(config)); setActiveId(config.sections[0].id); setResetDialogOpen(false); showToast('Form has been reset'); }} onCancel={() => setResetDialogOpen(false)} />
+        <Toast message={toast.message} visible={toast.visible} />
+      </div>
+    </FormProvider>
+  );
+}
+
+// -----------------------------------------------------------------------
+// Public Calculator Fill — renders a calculator from ?calc=ID
+// -----------------------------------------------------------------------
+function PublicCalcFill({ calcId }: { calcId: string }) {
+  useEffect(() => {
+    document.title = 'Calculator | BGrowth Club';
+  }, [calcId]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }} className="font-sans bg-[#f4f6fb]">
+      <CalculatorEngine ownerEmail="" initialCalcId={calcId} />
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------
+export function App({ ownerEmail }: { ownerEmail: string }) {
+  const params = new URLSearchParams(window.location.search);
+  const templateId = params.get('template');
+  const calcId = params.get('calc');
+  const plannerId = params.get('planner');
+
+  const [activeTool, setActiveTool] = useState<ActiveTool>(() => {
+    const tool = params.get('tool');
+    if (tool === 'checklist' || tool === 'planner' || tool === 'calculator' || tool === 'ai-builder') return tool;
+    return null;
   });
 
   useEffect(() => {
-    localStorage.setItem('bgrowth_studio_products_v3', JSON.stringify(products));
-  }, [products]);
+    const url = new URL(window.location.href);
+    if (activeTool) url.searchParams.set('tool', activeTool);
+    else url.searchParams.delete('tool');
+    window.history.replaceState(null, '', url.toString());
+  }, [activeTool]);
 
-  // Generate / Create digital product from prompt
-  const [isGenerating, setIsGenerating] = useState(false);
-  const handleGenerateProduct = async (prompt: string, productType?: string, blueprint?: any) => {
-    setIsGenerating(true);
-    
-    // Deduct cost
-    const generationCost = creditCosts.find(c => c.action === "Initial Product Generation")?.cost || 150;
-    setCredits(prev => Math.max(0, prev - generationCost));
+  useEffect(() => {
+    if (!activeTool && !templateId && !calcId && !plannerId) applyBrandTheme('#1061EC');
+  }, [activeTool, templateId, calcId, plannerId]);
 
-    try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, productType, blueprint })
-      });
-      
-      const data = await response.json();
-      if (data.product) {
-        // Enforce version seeder sync
-        const newProduct = data.product;
-        // Prepend new product
-        setProducts(prev => [newProduct, ...prev]);
-        setActiveProduct(newProduct);
-        setCurrentTab('create'); // Navigate to active workspace
-      } else {
-        throw new Error(data.error || "No product returned");
-      }
-    } catch (error) {
-      console.error("Failed to generate digital product:", error);
-      alert("A processing error occurred. The BGrowth local template engine resolved the issue to ensure continuity.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+  useEffect(() => {
+    document.title = activeTool ? `${TOOL_NAMES[activeTool]} | BGrowth Studio` : 'BGrowth Studio';
+  }, [activeTool]);
 
-  // Refine / Improve existing product using Gemini
-  const [isImproving, setIsImproving] = useState(false);
-  const handleImproveProduct = async (action: string, instruction?: string) => {
-    if (!activeProduct) return;
-    setIsImproving(true);
+  if (templateId) return <PublicFill templateId={templateId} />;
 
-    // Deduct cost
-    const costAction = action.includes('SEO') ? 'SEO Strategy Audit' : 
-                       action.includes('Translate') ? 'Full Language Translation' : 
-                       'Aesthetic Layout Adjustments';
-    const cost = creditCosts.find(c => c.action === costAction)?.cost || 30;
-    setCredits(prev => Math.max(0, prev - cost));
+  if (calcId) return <PublicCalcFill calcId={calcId} />;
 
-    try {
-      const response = await fetch('/api/improve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: activeProduct, action, instruction })
-      });
-      
-      const data = await response.json();
-      if (data.product) {
-        const updated = data.product;
-        setActiveProduct(updated);
-        // Replace in master list
-        setProducts(prev => prev.map(p => p.id === updated.id ? updated : p));
-      } else {
-        throw new Error(data.error || "Could not improve product");
-      }
-    } catch (error: any) {
-      console.error("AI improvement failed:", error);
-      alert(`AI co-creator failed: ${error.message || 'connection issue'}`);
-    } finally {
-      setIsImproving(false);
-    }
-  };
+  if (plannerId) return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }} className="font-sans">
+      <PlannerEngine ownerEmail="" initialPlannerId={plannerId} />
+    </div>
+  );
 
-  const handleUpdateProduct = (updated: DigitalProduct) => {
-    setActiveProduct(updated);
-    setProducts(prev => prev.map(p => p.id === updated.id ? updated : p));
-  };
-
-  const handleDeleteProduct = (id: string) => {
-    if (confirm("Are you sure you want to delete this product? This action cannot be undone.")) {
-      setProducts(prev => prev.filter(p => p.id !== id));
-      if (activeProduct?.id === id) {
-        setActiveProduct(null);
-      }
-    }
-  };
-
-  const handleToggleFavorite = (id: string) => {
-    setProducts(prev => prev.map(p => {
-      if (p.id === id) {
-        const updated = { ...p, isFavorite: !p.isFavorite };
-        if (activeProduct?.id === id) {
-          setActiveProduct(updated);
-        }
-        return updated;
-      }
-      return p;
-    }));
-  };
+  if (activeTool) return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }} className="font-sans bg-[#f4f6fb]">
+      <StudioNav activeTool={activeTool} toolName={TOOL_NAMES[activeTool]} ownerEmail={ownerEmail} onHome={() => setActiveTool(null)} />
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        {activeTool === 'checklist' && <ChecklistBuilderApp ownerEmail={ownerEmail} embedded />}
+        {activeTool === 'planner' && <PlannerEngine ownerEmail={ownerEmail} />}
+        {activeTool === 'calculator' && <CalculatorEngine ownerEmail={ownerEmail} />}
+        {activeTool === 'ai-builder' && <AIBuilder ownerEmail={ownerEmail} />}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex h-screen bg-slate-50/50 text-slate-800 font-sans overflow-hidden select-none">
-      
-      {/* Sidebar Navigation */}
-      <Sidebar
-        currentTab={activeProduct ? 'products' : currentTab}
-        onTabChange={(tab) => {
-          setActiveProduct(null); // Clear active workspace to show main tabs
-          setCurrentTab(tab);
-        }}
-      />
-
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        
-        {/* Header bar */}
-        <Header
-          credits={credits}
-          currentTab={activeProduct ? 'products' : currentTab}
-        />
-
-        {/* Dynamic Inner Content Loader */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {activeProduct ? (
-            <ProductDashboardView
-              product={activeProduct}
-              onBack={() => setActiveProduct(null)}
-              onUpdateProduct={handleUpdateProduct}
-              onImproveProduct={handleImproveProduct}
-              isImproving={isImproving}
-              creditsCostConfigs={creditCosts}
-            />
-          ) : (
-            <>
-              {currentTab === 'create' && (
-                <CreatePage
-                  onGenerate={handleGenerateProduct}
-                  isGenerating={isGenerating}
-                  recentProducts={products}
-                  onSelectProduct={(p) => setActiveProduct(p)}
-                  credits={credits}
-                />
-              )}
-
-              {currentTab === 'dashboard' && (
-                <DashboardOverview
-                  products={products}
-                  credits={credits}
-                  onTabChange={(tab) => setCurrentTab(tab)}
-                  onSelectProduct={(p) => setActiveProduct(p)}
-                />
-              )}
-
-              {currentTab === 'products' && (
-                <ProductLibraryView
-                  products={products}
-                  onSelectProduct={(p) => setActiveProduct(p)}
-                  onDeleteProduct={handleDeleteProduct}
-                  onToggleFavorite={handleToggleFavorite}
-                  onCreateNew={() => setCurrentTab('create')}
-                />
-              )}
-
-              {currentTab === 'analytics' && (
-                <AnalyticsView products={products} />
-              )}
-
-              {currentTab === 'settings' && (
-                <SettingsView
-                  creditCosts={creditCosts}
-                  onUpdateCreditCosts={(updated) => setCreditCosts(updated)}
-                />
-              )}
-
-              {/* Catch-all fallback */}
-              {!['create', 'dashboard', 'products', 'analytics', 'settings'].includes(currentTab) && (
-                <div className="flex-1 flex items-center justify-center text-slate-400 font-semibold text-xs">
-                  This custom Builder module is currently loading...
-                </div>
-              )}
-            </>
-          )}
-        </main>
-      </div>
+    <div className="font-sans bg-[#f4f6fb]">
+      <StudioNav ownerEmail={ownerEmail} onHome={() => setActiveTool(null)} />
+      <StudioHome ownerEmail={ownerEmail} onSelect={(tool) => setActiveTool(tool as ActiveTool)} />
     </div>
   );
 }
