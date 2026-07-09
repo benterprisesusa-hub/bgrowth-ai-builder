@@ -236,7 +236,7 @@ export default function ProductDashboardView({
               copy.versions.push({
                 version: nextVer,
                 timestamp: new Date().toISOString(),
-                updatedBy: "John Smith",
+                updatedBy: "BGrowth",
                 changeLog: "Manual edit and save",
                 state: JSON.parse(JSON.stringify({
                   structure: copy.structure,

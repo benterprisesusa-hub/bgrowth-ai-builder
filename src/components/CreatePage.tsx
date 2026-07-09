@@ -1282,7 +1282,7 @@ export default function CreatePage({ onGenerate, isGenerating, recentProducts, o
         </div>
       </div>
 
-      {/* Recent Creations (Match exactly John's recent drafts list in image) */}
+      {/* Recent Creations (Match exactly BGrowth recent drafts list in image) */}
       <div className="max-w-4xl mx-auto mb-10">
         <div className="flex items-center justify-between mb-5">
           <div>

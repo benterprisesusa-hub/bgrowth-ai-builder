@@ -11,7 +11,7 @@ export default function Header({ credits, currentTab }: HeaderProps) {
   const getTitles = () => {
     switch (currentTab) {
       case 'create':
-        return { title: "Welcome back, John! 👋", subtitle: "What will you create today?" };
+        return { title: "Welcome back, BGrowth! 👋", subtitle: "What will you create today?" };
       case 'dashboard':
         return { title: "Business Dashboard 📊", subtitle: "Track views, sales, downloads and credit metrics" };
       case 'products':
