@@ -1,0 +1,8 @@
+{
+  "name": "BGrowth AI Product Builder",
+  "description": "Transform single-prompt ideas into complete, high-quality digital products ready to publish and sell on BGrowth Store, Etsy, Shopify, and Gumroad.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
