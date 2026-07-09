@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DigitalProduct, ProductType } from '../types';
+import ProductLayoutPreview from './ProductLayoutPreview';
 
 interface CreatePageProps {
   onGenerate: (prompt: string, type?: string, blueprint?: any) => Promise<void>;
@@ -341,7 +342,7 @@ export default function CreatePage({ onGenerate, isGenerating, recentProducts, o
         </div>
 
         {/* Outer Split Layout */}
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-8">
           
           {/* Main Blueprint Workspace Area (Tabbed) */}
           <div className="lg:col-span-3 flex flex-col gap-6">
@@ -1070,7 +1071,15 @@ export default function CreatePage({ onGenerate, isGenerating, recentProducts, o
           </div>
 
           {/* Validation & AI Resources Sidebar Panel */}
-          <div className="flex flex-col gap-6">
+          <div className="lg:col-span-2 flex flex-col gap-6">
+            
+            {/* Live Visual Layout Mockup */}
+            <ProductLayoutPreview
+              bp={bp}
+              bpName={bpName}
+              bpType={bpType}
+              bpSellingPrice={bpSellingPrice}
+            />
             
             {/* Approval Screen Card */}
             <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm flex flex-col">
@@ -1282,7 +1291,7 @@ export default function CreatePage({ onGenerate, isGenerating, recentProducts, o
         </div>
       </div>
 
-      {/* Recent Creations (Match exactly BGrowth recent drafts list in image) */}
+      {/* Recent Creations (Match exactly Recent drafts list in image) */}
       <div className="max-w-4xl mx-auto mb-10">
         <div className="flex items-center justify-between mb-5">
           <div>

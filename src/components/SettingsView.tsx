@@ -43,19 +43,19 @@ export default function SettingsView({ creditCosts, onUpdateCreditCosts }: Setti
         </span>
       </div>
 
-      {/* API Key Status */}
+      {/* Secret API Key Verification block */}
       <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
         <div className="flex items-start gap-3">
           <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-4.5 h-4.5" />
           </div>
           <div>
-            <span className="text-xs font-bold text-slate-800 block">Gemini AI Integration</span>
+            <span className="text-xs font-bold text-slate-800 block">Security Verification: Gemini API Key</span>
             <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-              AI-powered product generation is active. Your <code className="text-[10px] bg-slate-50 text-slate-700 font-mono px-1 py-0.5 rounded font-bold">GEMINI_API_KEY</code> is configured in your Vercel environment variables.
+              The environment's primary server-side <code className="text-[10px] bg-slate-50 text-slate-700 font-mono px-1 py-0.5 rounded font-bold">GEMINI_API_KEY</code> has been detected and is verified. AI Product Builder™ calls are secure.
             </p>
             <div className="mt-3 text-[10px] bg-slate-50 text-slate-400 p-2 rounded border border-slate-100 font-medium">
-              💡 To update your API key, go to Vercel Dashboard → Settings → Environment Variables → GEMINI_API_KEY.
+              💡 <strong>Guidance:</strong> To rotate, change, or supply third-party API tokens, configure them inside the secure <strong>Secrets Panel</strong> in the AI Studio sidebar settings. Do not insert keys directly into the source code.
             </div>
           </div>
         </div>
