@@ -66,7 +66,7 @@ export default function DashboardOverview({
             <Award className="w-6 h-6 text-indigo-600" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-slate-800 tracking-tight">John's BGrowth Creator Studio</h2>
+            <h2 className="text-base font-extrabold text-slate-800 tracking-tight">BGrowth Creator Studio</h2>
             <p className="text-[11px] text-slate-400 font-medium">
               You currently have <strong className="text-slate-700">{publishedCount}</strong> published products and <strong className="text-slate-700">{draftCount}</strong> drafts active.
             </p>
